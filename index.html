@@ -42,6 +42,12 @@
       </div>
     </section>
 
+    <section class="chart-section" id="chart-section">
+      <h2>Uitgaven per categorie</h2>
+      <div id="category-chart"></div>
+      <p id="chart-empty-message" class="empty-message">Nog geen uitgaven om te tonen.</p>
+    </section>
+
     <section class="import-section">
       <div class="import-row">
         <label for="import-file" class="import-label-button">Bankafschrift importeren (.xls, .xlsx, .csv)</label>
@@ -61,6 +67,9 @@
           <option value="income">Inkomsten</option>
           <option value="expense">Uitgaven</option>
         </select>
+      </div>
+      <div class="form-row">
+        <select id="category"></select>
         <button type="submit">Toevoegen</button>
       </div>
     </form>
@@ -68,7 +77,10 @@
     <section class="list-section">
       <div class="list-header">
         <h2>Transacties</h2>
-        <button id="clear-all" class="link-button">Alles wissen</button>
+        <div class="list-header-actions">
+          <button id="export-excel" class="link-button" type="button">Exporteren</button>
+          <button id="clear-all" class="link-button">Alles wissen</button>
+        </div>
       </div>
       <ul id="transaction-list"></ul>
       <p id="empty-message" class="empty-message">Nog geen transacties toegevoegd.</p>

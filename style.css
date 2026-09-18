@@ -140,6 +140,71 @@ form {
   margin-bottom: 24px;
 }
 
+.chart-section {
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-bottom: 16px;
+}
+
+.chart-section h2 {
+  margin: 0 0 14px;
+  font-size: 1.1rem;
+}
+
+.chart-row {
+  margin-bottom: 12px;
+}
+
+.chart-row:last-child {
+  margin-bottom: 0;
+}
+
+.chart-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+}
+
+.chart-row-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #52514e;
+  min-width: 0;
+}
+
+.chart-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chart-row-value {
+  font-weight: 600;
+  color: #0b0b0b;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chart-track {
+  background: #e1e0d9;
+  border-radius: 0 4px 4px 0;
+  height: 20px;
+  overflow: hidden;
+}
+
+.chart-fill {
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  min-width: 4px;
+}
+
 .import-section {
   background: #fff;
   border-radius: 10px;
@@ -219,6 +284,10 @@ input, select, button {
   flex: 1;
 }
 
+#category {
+  flex: 2;
+}
+
 button[type="submit"] {
   flex: 1;
   background: #2563eb;
@@ -249,6 +318,15 @@ button[type="submit"]:hover {
 .list-header h2 {
   margin: 0;
   font-size: 1.1rem;
+}
+
+.list-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.list-header-actions .link-button:first-child {
+  color: #2563eb;
 }
 
 .link-button {
@@ -291,9 +369,26 @@ button[type="submit"]:hover {
   font-weight: 500;
 }
 
+.tx-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
 .tx-date {
   font-size: 0.8rem;
   color: #6b7280;
+}
+
+.tx-category-select {
+  font-size: 0.75rem;
+  color: #6b7280;
+  background: #f4f5f7;
+  border: none;
+  border-radius: 6px;
+  padding: 2px 6px;
+  max-width: 140px;
 }
 
 .tx-right {
