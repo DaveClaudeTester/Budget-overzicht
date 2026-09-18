@@ -45,6 +45,68 @@ const syncStatusEl = document.getElementById("sync-status");
 const importFileInput = document.getElementById("import-file");
 const importStatusEl = document.getElementById("import-status");
 
+const categoryInput = document.getElementById("category");
+const categoryChartEl = document.getElementById("category-chart");
+const chartEmptyMessage = document.getElementById("chart-empty-message");
+const exportExcelButton = document.getElementById("export-excel");
+
+const EXPENSE_CATEGORIES = [
+  { id: "boodschappen", label: "Boodschappen", color: "#2a78d6" },
+  { id: "wonen", label: "Wonen", color: "#eb6834" },
+  { id: "vervoer", label: "Vervoer", color: "#1baf7a" },
+  { id: "abonnementen", label: "Abonnementen", color: "#eda100" },
+  { id: "gezondheid", label: "Gezondheid", color: "#e87ba4" },
+  { id: "horeca", label: "Horeca & uitjes", color: "#008300" },
+  { id: "kleding", label: "Kleding & shopping", color: "#4a3aa7" },
+  { id: "overig", label: "Overig", color: "#e34948" },
+];
+
+const INCOME_CATEGORIES = [
+  { id: "salaris", label: "Salaris" },
+  { id: "uitkering", label: "Toeslag/uitkering" },
+  { id: "overig-inkomen", label: "Overig" },
+];
+
+const EXPENSE_KEYWORDS = [
+  ["boodschappen", /albert heijn|\bah\b|jumbo|lidl|aldi|\bplus\b|coop|nettorama|dirk|vomar|\bspar\b|ekoplaza|makro|markt|kruidvat/i],
+  ["vervoer", /shell|esso|\bbp\b|total|tango|tinq|parkeren|\bns\b|ov-?chipkaart|uber|brandstoffen|tankstation/i],
+  ["wonen", /\bvve\b|hypotheek|\bhuur\b|energiedirect|eneco|vattenfall|essent|waterbedrijf|vitens|woningcorporatie/i],
+  ["abonnementen", /netflix|spotify|videoland|disney|ziggo|\bkpn\b|telfort|vodafone|t-mobile|youfone|simpel|amazon prime/i],
+  ["gezondheid", /apotheek|huisarts|tandarts|zorgverzekeraar|zilveren kruis|\bcz\b|\bvgz\b|menzis|fysio/i],
+  ["horeca", /cafe|café|restaurant|mcdonald|\bkfc\b|pathe|bioscoop|domino|thuisbezorgd|deliveroo|sumup/i],
+  ["kleding", /h&m|zara|primark|wehkamp|zalando|bijenkorf|c&a\b/i],
+];
+
+const INCOME_KEYWORDS = [
+  ["salaris", /salaris|\bloon\b|payroll/i],
+  ["uitkering", /\buwv\b|belastingdienst|toeslag|duo\b/i],
+];
+
+function categoriesForType(type) {
+  return type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+}
+
+function getCategory(tx) {
+  const list = categoriesForType(tx.type);
+  const fallbackId = tx.type === "income" ? "overig-inkomen" : "overig";
+  const id = tx.category || fallbackId;
+  return list.find((c) => c.id === id) || list.find((c) => c.id === fallbackId);
+}
+
+function guessCategory(rawDescription, type) {
+  const text = String(rawDescription || "");
+  const keywords = type === "income" ? INCOME_KEYWORDS : EXPENSE_KEYWORDS;
+  for (const [id, regex] of keywords) {
+    if (regex.test(text)) return id;
+  }
+  return type === "income" ? "overig-inkomen" : "overig";
+}
+
+function populateCategoryOptions(type) {
+  const cats = categoriesForType(type);
+  categoryInput.innerHTML = cats.map((c) => `<option value="${c.id}">${c.label}</option>`).join("");
+}
+
 function loadLocalTransactions() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -165,12 +227,29 @@ function render() {
     description.className = "tx-description";
     description.textContent = tx.description;
 
+    const meta = document.createElement("div");
+    meta.className = "tx-meta";
+
     const date = document.createElement("span");
     date.className = "tx-date";
     date.textContent = formatDate(tx.date);
 
+    const categorySelect = document.createElement("select");
+    categorySelect.className = "tx-category-select";
+    categoriesForType(tx.type).forEach((cat) => {
+      const option = document.createElement("option");
+      option.value = cat.id;
+      option.textContent = cat.label;
+      categorySelect.appendChild(option);
+    });
+    categorySelect.value = getCategory(tx).id;
+    categorySelect.addEventListener("change", () => updateCategory(tx.id, categorySelect.value));
+
+    meta.appendChild(date);
+    meta.appendChild(categorySelect);
+
     info.appendChild(description);
-    info.appendChild(date);
+    info.appendChild(meta);
 
     const right = document.createElement("div");
     right.className = "tx-right";
@@ -207,6 +286,72 @@ function render() {
   totalIncomeEl.textContent = formatCurrency(totalIncome);
   totalExpenseEl.textContent = formatCurrency(totalExpense);
   totalBalanceEl.textContent = formatCurrency(totalIncome - totalExpense);
+
+  renderCategoryChart();
+}
+
+function renderCategoryChart() {
+  const totals = new Map();
+  transactions
+    .filter((tx) => tx.type === "expense")
+    .forEach((tx) => {
+      const cat = getCategory(tx);
+      totals.set(cat.id, (totals.get(cat.id) || 0) + tx.amount);
+    });
+
+  const totalExpense = [...totals.values()].reduce((sum, v) => sum + v, 0);
+
+  categoryChartEl.innerHTML = "";
+
+  if (totalExpense <= 0) {
+    chartEmptyMessage.classList.remove("hidden");
+    return;
+  }
+  chartEmptyMessage.classList.add("hidden");
+
+  const rows = EXPENSE_CATEGORIES.map((cat) => ({ ...cat, amount: totals.get(cat.id) || 0 }))
+    .filter((row) => row.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+
+  const maxAmount = rows[0].amount;
+
+  rows.forEach((row) => {
+    const percent = Math.round((row.amount / totalExpense) * 100);
+    const width = Math.max((row.amount / maxAmount) * 100, 4);
+
+    const rowEl = document.createElement("div");
+    rowEl.className = "chart-row";
+
+    const top = document.createElement("div");
+    top.className = "chart-row-top";
+
+    const label = document.createElement("span");
+    label.className = "chart-row-label";
+    const dot = document.createElement("span");
+    dot.className = "chart-dot";
+    dot.style.background = row.color;
+    label.appendChild(dot);
+    label.appendChild(document.createTextNode(row.label));
+
+    const value = document.createElement("span");
+    value.className = "chart-row-value";
+    value.textContent = `${formatCurrency(row.amount)} · ${percent}%`;
+
+    top.appendChild(label);
+    top.appendChild(value);
+
+    const track = document.createElement("div");
+    track.className = "chart-track";
+    const fill = document.createElement("div");
+    fill.className = "chart-fill";
+    fill.style.width = `${width}%`;
+    fill.style.background = row.color;
+    track.appendChild(fill);
+
+    rowEl.appendChild(top);
+    rowEl.appendChild(track);
+    categoryChartEl.appendChild(rowEl);
+  });
 }
 
 function syncToCloud() {
@@ -253,19 +398,27 @@ function listenToSync(code) {
   );
 }
 
-function addTransaction(description, amount, date, type) {
+function addTransaction(description, amount, date, type, category) {
   transactions.push({
     id: Date.now().toString(),
     description,
     amount,
     date,
     type,
+    category,
   });
   persist();
 }
 
 function deleteTransaction(id) {
   transactions = transactions.filter((tx) => tx.id !== id);
+  persist();
+}
+
+function updateCategory(id, categoryId) {
+  const tx = transactions.find((t) => t.id === id);
+  if (!tx) return;
+  tx.category = categoryId;
   persist();
 }
 
@@ -281,11 +434,14 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
-  addTransaction(description, amount, date, type);
+  addTransaction(description, amount, date, type, categoryInput.value);
   form.reset();
   dateInput.value = new Date().toISOString().split("T")[0];
+  populateCategoryOptions(typeInput.value);
   descriptionInput.focus();
 });
+
+typeInput.addEventListener("change", () => populateCategoryOptions(typeInput.value));
 
 clearAllButton.addEventListener("click", () => {
   if (transactions.length === 0) return;
@@ -372,12 +528,14 @@ importFileInput.addEventListener("change", async (event) => {
         continue;
       }
 
+      const type = amountValue >= 0 ? "income" : "expense";
       transactions.push({
         id,
         description: cleanImportedDescription(rawDescription),
         amount: Math.abs(amountValue),
         date: isoDate,
-        type: amountValue >= 0 ? "income" : "expense",
+        type,
+        category: guessCategory(rawDescription, type),
       });
       existingIds.add(id);
       imported++;
@@ -397,6 +555,26 @@ importFileInput.addEventListener("change", async (event) => {
   }
 });
 
+exportExcelButton.addEventListener("click", () => {
+  if (transactions.length === 0) return;
+
+  const rows = [...transactions]
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .map((tx) => ({
+      Datum: tx.date,
+      Omschrijving: tx.description,
+      Categorie: getCategory(tx).label,
+      Type: tx.type === "income" ? "Inkomsten" : "Uitgaven",
+      Bedrag: tx.type === "income" ? tx.amount : -tx.amount,
+    }));
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Transacties");
+  XLSX.writeFile(workbook, `budget-overzicht-${new Date().toISOString().split("T")[0]}.xlsx`);
+});
+
 dateInput.value = new Date().toISOString().split("T")[0];
+populateCategoryOptions(typeInput.value);
 render();
 listenToSync(syncCode);
