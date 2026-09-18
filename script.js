@@ -50,6 +50,9 @@ const categoryChartEl = document.getElementById("category-chart");
 const chartEmptyMessage = document.getElementById("chart-empty-message");
 const exportExcelButton = document.getElementById("export-excel");
 
+const toggleBudgetButton = document.getElementById("toggle-budget");
+const budgetForm = document.getElementById("budget-form");
+
 const EXPENSE_CATEGORIES = [
   { id: "boodschappen", label: "Boodschappen", color: "#2a78d6" },
   { id: "wonen", label: "Wonen", color: "#eb6834" },
@@ -207,10 +210,45 @@ function generateSyncCode() {
 }
 
 let transactions = loadLocalTransactions();
+let budget = {};
 let syncCode = localStorage.getItem(SYNC_CODE_KEY) || generateSyncCode();
 localStorage.setItem(SYNC_CODE_KEY, syncCode);
 
 let unsubscribeSync = null;
+
+function renderBudgetForm() {
+  budgetForm.innerHTML = "";
+
+  EXPENSE_CATEGORIES.forEach((cat) => {
+    const row = document.createElement("div");
+    row.className = "budget-row";
+
+    const label = document.createElement("label");
+    const dot = document.createElement("span");
+    dot.className = "chart-dot";
+    dot.style.background = cat.color;
+    label.appendChild(dot);
+    label.appendChild(document.createTextNode(cat.label));
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.step = "0.01";
+    input.min = "0";
+    input.placeholder = "€ 0,00";
+    input.dataset.categoryId = cat.id;
+    input.value = budget[cat.id] || "";
+
+    row.appendChild(label);
+    row.appendChild(input);
+    budgetForm.appendChild(row);
+  });
+
+  const saveButton = document.createElement("button");
+  saveButton.type = "submit";
+  saveButton.className = "budget-save";
+  saveButton.textContent = "Begroting opslaan";
+  budgetForm.appendChild(saveButton);
+}
 
 function render() {
   list.innerHTML = "";
@@ -357,7 +395,7 @@ function renderCategoryChart() {
 function syncToCloud() {
   const ref = doc(db, "budgets", syncCode);
   syncStatusEl.textContent = "Bezig met synchroniseren…";
-  setDoc(ref, { transactions, updatedAt: Date.now() })
+  setDoc(ref, { transactions, budget, updatedAt: Date.now() })
     .then(() => {
       syncStatusEl.textContent = "Gesynchroniseerd";
     })
@@ -384,8 +422,10 @@ function listenToSync(code) {
     (snapshot) => {
       if (snapshot.exists()) {
         transactions = snapshot.data().transactions || [];
+        budget = snapshot.data().budget || {};
         saveLocalTransactions(transactions);
         render();
+        renderBudgetForm();
       } else if (transactions.length > 0) {
         syncToCloud();
       }
@@ -477,6 +517,26 @@ joinCodeButton.addEventListener("click", () => {
   joinCodeInput.value = "";
   syncJoinPanel.classList.add("hidden");
   listenToSync(syncCode);
+});
+
+toggleBudgetButton.addEventListener("click", () => {
+  budgetForm.classList.toggle("hidden");
+});
+
+budgetForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const newBudget = {};
+  budgetForm.querySelectorAll("input[data-category-id]").forEach((input) => {
+    const value = parseFloat(input.value);
+    if (!isNaN(value) && value > 0) {
+      newBudget[input.dataset.categoryId] = value;
+    }
+  });
+
+  budget = newBudget;
+  syncToCloud();
+  budgetForm.classList.add("hidden");
 });
 
 importFileInput.addEventListener("change", async (event) => {
@@ -576,5 +636,6 @@ exportExcelButton.addEventListener("click", () => {
 
 dateInput.value = new Date().toISOString().split("T")[0];
 populateCategoryOptions(typeInput.value);
+renderBudgetForm();
 render();
 listenToSync(syncCode);
