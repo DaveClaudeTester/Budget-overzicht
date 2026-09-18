@@ -42,6 +42,14 @@
       </div>
     </section>
 
+    <section class="import-section">
+      <div class="import-row">
+        <label for="import-file" class="import-label-button">Bankafschrift importeren (.xls, .xlsx, .csv)</label>
+        <input type="file" id="import-file" accept=".xls,.xlsx,.csv" hidden>
+      </div>
+      <p class="import-status" id="import-status"></p>
+    </section>
+
     <form id="transaction-form">
       <div class="form-row">
         <input type="text" id="description" placeholder="Omschrijving" required>
@@ -67,6 +75,7 @@
     </section>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="module" src="script.js"></script>
 </body>
 </html>

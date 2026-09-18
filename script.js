@@ -42,6 +42,9 @@ const joinCodeInput = document.getElementById("join-code-input");
 const joinCodeButton = document.getElementById("join-code-button");
 const syncStatusEl = document.getElementById("sync-status");
 
+const importFileInput = document.getElementById("import-file");
+const importStatusEl = document.getElementById("import-status");
+
 function loadLocalTransactions() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -62,6 +65,76 @@ function formatCurrency(value) {
 function formatDate(value) {
   const date = new Date(value);
   return date.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function excelDateToIso(value) {
+  if (value instanceof Date && !isNaN(value)) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  if (typeof value === "number") {
+    const str = String(Math.trunc(value));
+    if (str.length === 8) {
+      return `${str.slice(0, 4)}-${str.slice(4, 6)}-${str.slice(6, 8)}`;
+    }
+  }
+  const str = String(value || "").trim();
+  const isoLike = str.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (isoLike) {
+    return `${isoLike[1]}-${isoLike[2]}-${isoLike[3]}`;
+  }
+  const dayFirst = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dayFirst) {
+    return `${dayFirst[3]}-${dayFirst[2].padStart(2, "0")}-${dayFirst[1].padStart(2, "0")}`;
+  }
+  return null;
+}
+
+function parseAmount(value) {
+  if (typeof value === "number") return value;
+  const normalized = String(value || "").trim().replace(/\./g, "").replace(",", ".");
+  const num = parseFloat(normalized);
+  return isNaN(num) ? null : num;
+}
+
+function cleanImportedDescription(raw) {
+  const text = String(raw || "").trim();
+
+  const nameMatch = text.match(/\/NAME\/([^/]+)/);
+  if (nameMatch) {
+    let name = nameMatch[1].trim();
+    const remiMatch = text.match(/\/REMI\/([^/]+)/);
+    if (remiMatch && remiMatch[1].trim()) {
+      name += ` – ${remiMatch[1].trim().slice(0, 40)}`;
+    }
+    return name;
+  }
+
+  const beaMatch = text.match(/Betaalpas\s+(.+?)\s*,\s*PAS/i);
+  if (beaMatch) {
+    return beaMatch[1].replace(/\s+/g, " ").trim();
+  }
+
+  return text.replace(/\s+/g, " ").slice(0, 80);
+}
+
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function findColumnIndex(headerRow, names) {
+  for (let i = 0; i < headerRow.length; i++) {
+    const cell = String(headerRow[i] || "").trim().toLowerCase();
+    if (names.includes(cell)) return i;
+  }
+  return -1;
 }
 
 function generateSyncCode() {
@@ -248,6 +321,80 @@ joinCodeButton.addEventListener("click", () => {
   joinCodeInput.value = "";
   syncJoinPanel.classList.add("hidden");
   listenToSync(syncCode);
+});
+
+importFileInput.addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  importStatusEl.className = "import-status";
+  importStatusEl.textContent = "Bestand wordt gelezen…";
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array", raw: true });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+
+    if (rows.length < 2) {
+      throw new Error("geen transacties gevonden in dit bestand.");
+    }
+
+    const headerRow = rows[0];
+    const dateCol = findColumnIndex(headerRow, ["transactiedatum", "datum"]);
+    const amountCol = findColumnIndex(headerRow, ["transactiebedrag", "bedrag"]);
+    const descCol = findColumnIndex(headerRow, ["omschrijving", "naam / omschrijving", "mededelingen"]);
+
+    if (dateCol === -1 || amountCol === -1 || descCol === -1) {
+      throw new Error("kolommen 'Transactiedatum', 'Transactiebedrag' en 'Omschrijving' niet gevonden.");
+    }
+
+    const existingIds = new Set(transactions.map((tx) => tx.id));
+    let imported = 0;
+    let skipped = 0;
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length === 0) continue;
+
+      const isoDate = excelDateToIso(row[dateCol]);
+      const amountValue = parseAmount(row[amountCol]);
+      const rawDescription = row[descCol];
+
+      if (!isoDate || amountValue === null || amountValue === 0) {
+        skipped++;
+        continue;
+      }
+
+      const id = "imp_" + hashString(`${isoDate}|${amountValue}|${rawDescription}`);
+      if (existingIds.has(id)) {
+        skipped++;
+        continue;
+      }
+
+      transactions.push({
+        id,
+        description: cleanImportedDescription(rawDescription),
+        amount: Math.abs(amountValue),
+        date: isoDate,
+        type: amountValue >= 0 ? "income" : "expense",
+      });
+      existingIds.add(id);
+      imported++;
+    }
+
+    persist();
+
+    const skippedText = skipped > 0 ? `, ${skipped} overgeslagen (al aanwezig of onduidelijk)` : "";
+    importStatusEl.textContent = `${imported} transactie(s) geïmporteerd${skippedText}.`;
+    importStatusEl.className = imported > 0 ? "import-status success" : "import-status";
+  } catch (error) {
+    console.error("Import mislukt:", error);
+    importStatusEl.textContent = `Import mislukt: ${error.message}`;
+    importStatusEl.className = "import-status error";
+  } finally {
+    importFileInput.value = "";
+  }
 });
 
 dateInput.value = new Date().toISOString().split("T")[0];
