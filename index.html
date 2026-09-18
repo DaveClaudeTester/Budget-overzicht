@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Budget overzicht</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Budget overzicht</h1>
+      <p class="subtitle">Inkomsten en uitgaven bijhouden</p>
+    </header>
+
+    <section class="summary">
+      <div class="summary-card income">
+        <span class="label">Inkomsten</span>
+        <span class="amount" id="total-income">€ 0,00</span>
+      </div>
+      <div class="summary-card expense">
+        <span class="label">Uitgaven</span>
+        <span class="amount" id="total-expense">€ 0,00</span>
+      </div>
+      <div class="summary-card balance">
+        <span class="label">Saldo</span>
+        <span class="amount" id="total-balance">€ 0,00</span>
+      </div>
+    </section>
+
+    <form id="transaction-form">
+      <div class="form-row">
+        <input type="text" id="description" placeholder="Omschrijving" required>
+        <input type="number" id="amount" placeholder="Bedrag" step="0.01" min="0.01" required>
+      </div>
+      <div class="form-row">
+        <input type="date" id="date" required>
+        <select id="type">
+          <option value="income">Inkomsten</option>
+          <option value="expense">Uitgaven</option>
+        </select>
+        <button type="submit">Toevoegen</button>
+      </div>
+    </form>
+
+    <section class="list-section">
+      <div class="list-header">
+        <h2>Transacties</h2>
+        <button id="clear-all" class="link-button">Alles wissen</button>
+      </div>
+      <ul id="transaction-list"></ul>
+      <p id="empty-message" class="empty-message">Nog geen transacties toegevoegd.</p>
+    </section>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
