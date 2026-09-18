@@ -1,4 +1,25 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  onSnapshot,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBeU9BVl5uutfqn4Pyz8xwTHFvm4OX6hog",
+  authDomain: "budget-overzicht.firebaseapp.com",
+  projectId: "budget-overzicht",
+  storageBucket: "budget-overzicht.firebasestorage.app",
+  messagingSenderId: "134827123638",
+  appId: "1:134827123638:web:bbef1ee02f7c96d28e5717",
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
 const STORAGE_KEY = "budget-overzicht-transactions";
+const SYNC_CODE_KEY = "budget-overzicht-sync-code";
 
 const form = document.getElementById("transaction-form");
 const descriptionInput = document.getElementById("description");
@@ -13,7 +34,15 @@ const totalIncomeEl = document.getElementById("total-income");
 const totalExpenseEl = document.getElementById("total-expense");
 const totalBalanceEl = document.getElementById("total-balance");
 
-function loadTransactions() {
+const syncCodeValueEl = document.getElementById("sync-code-value");
+const copySyncCodeButton = document.getElementById("copy-sync-code");
+const toggleJoinButton = document.getElementById("toggle-join");
+const syncJoinPanel = document.getElementById("sync-join");
+const joinCodeInput = document.getElementById("join-code-input");
+const joinCodeButton = document.getElementById("join-code-button");
+const syncStatusEl = document.getElementById("sync-status");
+
+function loadLocalTransactions() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
@@ -22,8 +51,8 @@ function loadTransactions() {
   }
 }
 
-function saveTransactions(transactions) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+function saveLocalTransactions(items) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
 }
 
 function formatCurrency(value) {
@@ -35,7 +64,18 @@ function formatDate(value) {
   return date.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-let transactions = loadTransactions();
+function generateSyncCode() {
+  if (crypto.randomUUID) {
+    return crypto.randomUUID().split("-").slice(0, 2).join("-");
+  }
+  return Math.random().toString(36).slice(2, 10);
+}
+
+let transactions = loadLocalTransactions();
+let syncCode = localStorage.getItem(SYNC_CODE_KEY) || generateSyncCode();
+localStorage.setItem(SYNC_CODE_KEY, syncCode);
+
+let unsubscribeSync = null;
 
 function render() {
   list.innerHTML = "";
@@ -96,6 +136,50 @@ function render() {
   totalBalanceEl.textContent = formatCurrency(totalIncome - totalExpense);
 }
 
+function syncToCloud() {
+  const ref = doc(db, "budgets", syncCode);
+  syncStatusEl.textContent = "Bezig met synchroniseren…";
+  setDoc(ref, { transactions, updatedAt: Date.now() })
+    .then(() => {
+      syncStatusEl.textContent = "Gesynchroniseerd";
+    })
+    .catch((error) => {
+      console.error("Synchroniseren mislukt:", error);
+      syncStatusEl.textContent = "Synchroniseren mislukt (offline?) — lokaal wel opgeslagen";
+    });
+}
+
+function persist() {
+  saveLocalTransactions(transactions);
+  render();
+  syncToCloud();
+}
+
+function listenToSync(code) {
+  if (unsubscribeSync) {
+    unsubscribeSync();
+  }
+  syncCodeValueEl.textContent = code;
+  const ref = doc(db, "budgets", code);
+  unsubscribeSync = onSnapshot(
+    ref,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        transactions = snapshot.data().transactions || [];
+        saveLocalTransactions(transactions);
+        render();
+      } else if (transactions.length > 0) {
+        syncToCloud();
+      }
+      syncStatusEl.textContent = "Gesynchroniseerd";
+    },
+    (error) => {
+      console.error("Synchroniseren mislukt:", error);
+      syncStatusEl.textContent = "Synchroniseren mislukt (offline?) — lokaal wel opgeslagen";
+    }
+  );
+}
+
 function addTransaction(description, amount, date, type) {
   transactions.push({
     id: Date.now().toString(),
@@ -104,14 +188,12 @@ function addTransaction(description, amount, date, type) {
     date,
     type,
   });
-  saveTransactions(transactions);
-  render();
+  persist();
 }
 
 function deleteTransaction(id) {
   transactions = transactions.filter((tx) => tx.id !== id);
-  saveTransactions(transactions);
-  render();
+  persist();
 }
 
 form.addEventListener("submit", (event) => {
@@ -136,10 +218,38 @@ clearAllButton.addEventListener("click", () => {
   if (transactions.length === 0) return;
   if (confirm("Weet je zeker dat je alle transacties wilt verwijderen?")) {
     transactions = [];
-    saveTransactions(transactions);
-    render();
+    persist();
   }
+});
+
+copySyncCodeButton.addEventListener("click", () => {
+  navigator.clipboard
+    .writeText(syncCode)
+    .then(() => {
+      const original = copySyncCodeButton.textContent;
+      copySyncCodeButton.textContent = "✓";
+      setTimeout(() => {
+        copySyncCodeButton.textContent = original;
+      }, 1500);
+    })
+    .catch(() => {});
+});
+
+toggleJoinButton.addEventListener("click", () => {
+  syncJoinPanel.classList.toggle("hidden");
+});
+
+joinCodeButton.addEventListener("click", () => {
+  const newCode = joinCodeInput.value.trim();
+  if (!newCode) return;
+
+  syncCode = newCode;
+  localStorage.setItem(SYNC_CODE_KEY, syncCode);
+  joinCodeInput.value = "";
+  syncJoinPanel.classList.add("hidden");
+  listenToSync(syncCode);
 });
 
 dateInput.value = new Date().toISOString().split("T")[0];
 render();
+listenToSync(syncCode);

@@ -13,6 +13,20 @@
       <p class="subtitle">Inkomsten en uitgaven bijhouden</p>
     </header>
 
+    <section class="sync-section">
+      <div class="sync-row">
+        <span class="sync-label">Sync-code</span>
+        <code id="sync-code-value">…</code>
+        <button id="copy-sync-code" class="icon-button" title="Kopiëren" type="button">⧉</button>
+        <button id="toggle-join" class="link-button" type="button">Koppelen</button>
+      </div>
+      <p class="sync-status" id="sync-status">Wordt automatisch gesynchroniseerd</p>
+      <div id="sync-join" class="sync-join hidden">
+        <input type="text" id="join-code-input" placeholder="Plak hier de sync-code van je andere apparaat">
+        <button id="join-code-button" type="button">Koppelen</button>
+      </div>
+    </section>
+
     <section class="summary">
       <div class="summary-card income">
         <span class="label">Inkomsten</span>
@@ -53,6 +67,6 @@
     </section>
   </div>
 
-  <script src="script.js"></script>
+  <script type="module" src="script.js"></script>
 </body>
 </html>
