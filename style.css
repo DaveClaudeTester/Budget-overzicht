@@ -205,6 +205,73 @@ form {
   min-width: 4px;
 }
 
+.budget-section {
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-bottom: 16px;
+}
+
+.budget-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.budget-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.budget-hint {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.budget-form {
+  margin-top: 12px;
+}
+
+.budget-form.hidden {
+  display: none;
+}
+
+.budget-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.budget-row label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.budget-row input {
+  width: 110px;
+}
+
+.budget-save {
+  margin-top: 4px;
+  width: 100%;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.budget-save:hover {
+  background: #1d4ed8;
+}
+
 .import-section {
   background: #fff;
   border-radius: 10px;
