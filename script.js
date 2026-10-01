@@ -53,6 +53,9 @@ const exportExcelButton = document.getElementById("export-excel");
 const toggleBudgetButton = document.getElementById("toggle-budget");
 const budgetForm = document.getElementById("budget-form");
 
+const accountFilterEl = document.getElementById("account-filter");
+const accountInput = document.getElementById("account");
+
 const EXPENSE_CATEGORIES = [
   { id: "boodschappen", label: "Boodschappen", color: "#2a78d6" },
   { id: "wonen", label: "Wonen", color: "#eb6834" },
@@ -211,10 +214,58 @@ function generateSyncCode() {
 
 let transactions = loadLocalTransactions();
 let budget = {};
+let accountLabels = {};
+let activeAccountFilter = null;
 let syncCode = localStorage.getItem(SYNC_CODE_KEY) || generateSyncCode();
 localStorage.setItem(SYNC_CODE_KEY, syncCode);
 
 let unsubscribeSync = null;
+
+function knownAccountLabels() {
+  return [...new Set(Object.values(accountLabels))];
+}
+
+function renderAccountFilter() {
+  const labels = knownAccountLabels();
+
+  if (labels.length < 2) {
+    accountFilterEl.classList.add("hidden");
+    accountFilterEl.innerHTML = "";
+    if (activeAccountFilter) {
+      activeAccountFilter = null;
+    }
+    return;
+  }
+
+  accountFilterEl.classList.remove("hidden");
+  accountFilterEl.innerHTML = "";
+
+  const makePill = (label, value) => {
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = "account-pill" + (activeAccountFilter === value ? " active" : "");
+    pill.textContent = label;
+    pill.addEventListener("click", () => {
+      activeAccountFilter = value;
+      render();
+    });
+    return pill;
+  };
+
+  accountFilterEl.appendChild(makePill("Alle", null));
+  labels.forEach((label) => accountFilterEl.appendChild(makePill(label, label)));
+}
+
+function populateAccountOptions() {
+  const labels = knownAccountLabels();
+  if (labels.length < 2) {
+    accountInput.classList.add("hidden");
+    accountInput.innerHTML = "";
+    return;
+  }
+  accountInput.classList.remove("hidden");
+  accountInput.innerHTML = labels.map((l) => `<option value="${l}">${l}</option>`).join("");
+}
 
 function renderBudgetForm() {
   budgetForm.innerHTML = "";
@@ -253,7 +304,13 @@ function renderBudgetForm() {
 function render() {
   list.innerHTML = "";
 
-  const sorted = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+  renderAccountFilter();
+
+  const visible = activeAccountFilter
+    ? transactions.filter((tx) => tx.account === activeAccountFilter)
+    : transactions;
+
+  const sorted = [...visible].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   sorted.forEach((tx) => {
     const li = document.createElement("li");
@@ -286,6 +343,13 @@ function render() {
     meta.appendChild(date);
     meta.appendChild(categorySelect);
 
+    if (tx.account) {
+      const accountEl = document.createElement("span");
+      accountEl.className = "tx-account";
+      accountEl.textContent = tx.account;
+      meta.appendChild(accountEl);
+    }
+
     info.appendChild(description);
     info.appendChild(meta);
 
@@ -311,13 +375,13 @@ function render() {
     list.appendChild(li);
   });
 
-  emptyMessage.classList.toggle("hidden", transactions.length > 0);
+  emptyMessage.classList.toggle("hidden", visible.length > 0);
 
-  const totalIncome = transactions
+  const totalIncome = visible
     .filter((tx) => tx.type === "income")
     .reduce((sum, tx) => sum + tx.amount, 0);
 
-  const totalExpense = transactions
+  const totalExpense = visible
     .filter((tx) => tx.type === "expense")
     .reduce((sum, tx) => sum + tx.amount, 0);
 
@@ -325,12 +389,12 @@ function render() {
   totalExpenseEl.textContent = formatCurrency(totalExpense);
   totalBalanceEl.textContent = formatCurrency(totalIncome - totalExpense);
 
-  renderCategoryChart();
+  renderCategoryChart(visible);
 }
 
-function renderCategoryChart() {
+function renderCategoryChart(sourceTransactions) {
   const totals = new Map();
-  transactions
+  sourceTransactions
     .filter((tx) => tx.type === "expense")
     .forEach((tx) => {
       const cat = getCategory(tx);
@@ -395,7 +459,7 @@ function renderCategoryChart() {
 function syncToCloud() {
   const ref = doc(db, "budgets", syncCode);
   syncStatusEl.textContent = "Bezig met synchroniseren…";
-  setDoc(ref, { transactions, budget, updatedAt: Date.now() })
+  setDoc(ref, { transactions, budget, accountLabels, updatedAt: Date.now() })
     .then(() => {
       syncStatusEl.textContent = "Gesynchroniseerd";
     })
@@ -423,9 +487,11 @@ function listenToSync(code) {
       if (snapshot.exists()) {
         transactions = snapshot.data().transactions || [];
         budget = snapshot.data().budget || {};
+        accountLabels = snapshot.data().accountLabels || {};
         saveLocalTransactions(transactions);
         render();
         renderBudgetForm();
+        populateAccountOptions();
       } else if (transactions.length > 0) {
         syncToCloud();
       }
@@ -438,7 +504,7 @@ function listenToSync(code) {
   );
 }
 
-function addTransaction(description, amount, date, type, category) {
+function addTransaction(description, amount, date, type, category, account) {
   transactions.push({
     id: Date.now().toString(),
     description,
@@ -446,6 +512,7 @@ function addTransaction(description, amount, date, type, category) {
     date,
     type,
     category,
+    account: account || undefined,
   });
   persist();
 }
@@ -474,7 +541,7 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
-  addTransaction(description, amount, date, type, categoryInput.value);
+  addTransaction(description, amount, date, type, categoryInput.value, accountInput.value);
   form.reset();
   dateInput.value = new Date().toISOString().split("T")[0];
   populateCategoryOptions(typeInput.value);
@@ -560,9 +627,29 @@ importFileInput.addEventListener("change", async (event) => {
     const dateCol = findColumnIndex(headerRow, ["transactiedatum", "datum"]);
     const amountCol = findColumnIndex(headerRow, ["transactiebedrag", "bedrag"]);
     const descCol = findColumnIndex(headerRow, ["omschrijving", "naam / omschrijving", "mededelingen"]);
+    const accountCol = findColumnIndex(headerRow, ["rekeningnummer", "iban"]);
 
     if (dateCol === -1 || amountCol === -1 || descCol === -1) {
       throw new Error("kolommen 'Transactiedatum', 'Transactiebedrag' en 'Omschrijving' niet gevonden.");
+    }
+
+    if (accountCol !== -1) {
+      const unknownNumbers = new Set();
+      for (let i = 1; i < rows.length; i++) {
+        const raw = rows[i] && rows[i][accountCol];
+        const number = String(raw || "").trim();
+        if (number && !accountLabels[number]) {
+          unknownNumbers.add(number);
+        }
+      }
+      unknownNumbers.forEach((number) => {
+        const suggestion = Object.keys(accountLabels).length === 0 ? "Eigen rekening" : "";
+        const label = window.prompt(
+          `Nieuwe rekening gevonden in het bestand (${number}). Hoe wil je deze noemen? (bijv. "Eigen rekening" of "Gezamenlijk")`,
+          suggestion
+        );
+        accountLabels[number] = label && label.trim() ? label.trim() : `Rekening ${number.slice(-4)}`;
+      });
     }
 
     const existingIds = new Set(transactions.map((tx) => tx.id));
@@ -589,6 +676,7 @@ importFileInput.addEventListener("change", async (event) => {
       }
 
       const type = amountValue >= 0 ? "income" : "expense";
+      const accountNumber = accountCol !== -1 ? String(row[accountCol] || "").trim() : "";
       transactions.push({
         id,
         description: cleanImportedDescription(rawDescription),
@@ -596,12 +684,14 @@ importFileInput.addEventListener("change", async (event) => {
         date: isoDate,
         type,
         category: guessCategory(rawDescription, type),
+        account: accountNumber ? accountLabels[accountNumber] : undefined,
       });
       existingIds.add(id);
       imported++;
     }
 
     persist();
+    populateAccountOptions();
 
     const skippedText = skipped > 0 ? `, ${skipped} overgeslagen (al aanwezig of onduidelijk)` : "";
     importStatusEl.textContent = `${imported} transactie(s) geïmporteerd${skippedText}.`;
@@ -624,6 +714,7 @@ exportExcelButton.addEventListener("click", () => {
       Datum: tx.date,
       Omschrijving: tx.description,
       Categorie: getCategory(tx).label,
+      Rekening: tx.account || "",
       Type: tx.type === "income" ? "Inkomsten" : "Uitgaven",
       Bedrag: tx.type === "income" ? tx.amount : -tx.amount,
     }));
@@ -637,5 +728,6 @@ exportExcelButton.addEventListener("click", () => {
 dateInput.value = new Date().toISOString().split("T")[0];
 populateCategoryOptions(typeInput.value);
 renderBudgetForm();
+populateAccountOptions();
 render();
 listenToSync(syncCode);
